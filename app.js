@@ -3,7 +3,7 @@ const pdfParse = require('pdf-parse');
 
 console.log("Welcome to PDF Parser");
 
-const journal = '42';
+const journal = '43';
 
 const pdfFile = fs.readFileSync(`./journals/${journal}.pdf`);
 
@@ -29,8 +29,36 @@ function parseString(text) {
 	let periodIndexes = findPeriodIndexes(array);
 	const contents = array.splice(0, getLastKeyInMap(periodIndexes) + 1);
 	fs.writeFileSync(`${dir}/contents.md`, contents);
-	const buffer = [];
+	const sectionLines = extractTOC(contents, periodIndexes);
+	
+	
+	// Need to find the indexes again since some strings have been lengthened
+	periodIndexes = findPeriodIndexes(sectionLines);
+	// periodIndexes.forEach((cursor, index) => {
+
+	// })
+	const mappedArray = sectionLines.map(str => {
+		return str.replace(/[.]/g, ""); // this might remove periods we don't want to take
+	})
+	console.log(mappedArray);
+	const sectionPages = mappedArray.map((str, index) => {
+		const cursorStart = periodIndexes.get(index);
+		const title = str.substring(0, cursorStart).trim();
+		const metadata = str.substring(cursorStart).trim();
+		const array = metadata.split(' ');
+		const page = array[0];
+		const number = array[1] ? parseInt(array[1]) : null;
+		return { title, page, number };
+	})
+	const filteredArray = removeEmptyLines(array);
+	appendBodies(filteredArray, sectionPages);
+	fs.writeFileSync(`./output/${journal}/lines.json`, JSON.stringify(filteredArray));
+	fs.writeFileSync(`./output/${journal}/sections.json`, JSON.stringify(sectionPages));
+}
+
+function extractTOC(contents, periodIndexes) {
 	const sectionLines = [];
+	const buffer = [];
 	let currentSection = 1;
 	let sectionNum = null;
 	contents.forEach((line, index) => {
@@ -75,36 +103,7 @@ function parseString(text) {
 			}
 		}
 	})
-	// Need to find the indexes again since some strings have been lengthened
-	periodIndexes = findPeriodIndexes(sectionLines);
-	// periodIndexes.forEach((cursor, index) => {
-
-	// })
-	const mappedArray = sectionLines.map(str => {
-		return str.replace(/[.]/g, ""); // this might remove periods we don't want to take
-	})
-	console.log(mappedArray);
-	const sectionPages = mappedArray.map((str, index) => {
-		const cursorStart = periodIndexes.get(index);
-		const title = str.substring(0, cursorStart).trim();
-		const metadata = str.substring(cursorStart).trim();
-		const array = metadata.split(' ');
-		const page = array[0];
-		const number = array[1] ? parseInt(array[1]) : null;
-		return { title, page, number };
-	})
-	const filteredArray = removeEmptyLines(array);
-	appendBodies(filteredArray, sectionPages);
-	fs.writeFileSync(`./output/${journal}/lines.json`, JSON.stringify(filteredArray));
-	fs.writeFileSync(`./output/${journal}/sections.json`, JSON.stringify(sectionPages));
-}
-
-function extractTOC(text) {
-	// find indexOf the first and last lines that contain 4 periods
-	// run through each line, creating a new element for each 4 period line
-	// if no 4 dots, save that line in a buffer to be added to the beginning
-	// of the next line.
-	// In this case the last 2 digits of the first line are the section number
+	return sectionLines;
 }
 
 function findPeriodIndexes(array) {

@@ -3,7 +3,7 @@ const pdfParse = require('pdf-parse');
 
 console.log("Welcome to the Senate Journal PDF Parser");
 
-const journal = '66';
+const journal = '54';
 
 const pdfFile = fs.readFileSync(`./journals/${journal}.pdf`);
 
@@ -88,22 +88,51 @@ function extractTOC(contents, periodIndexes) {
 	console.log(array);
 	return array;
 }
-
+// needs to handle missing whole section case in journal (54)
 function extractSectionNumber(line, currentSection, foundSectionNum) {
 	const words = line.split(' ');
-	const index = words.findIndex(word => word == currentSection);
+	let index = words.findIndex(word => word == currentSection);
+	if (index === -1) { // check end of line
+		let word = words.pop();
+		const length = currentSection.toString().length;
+		console.log(word, word.length, length);
+		const stringToCheck = word.substring(word.length - length);
+		console.log("String Check:", stringToCheck);
+		if (stringToCheck == currentSection) {
+			word = word.substring(0, word.length - length);
+			words.push(word);
+			words.unshift(`${stringToCheck} `);
+			index = words.findIndex(word => word == currentSection);
+		}
+	}
+	console.log(line);
 	if (index > -1) {
-		foundSectionNum = parseInt(words.splice(index, 1)[0]);
+		if (index === words.length - 1) {
+			foundSectionNum = words.pop();
+		}	else {
+			foundSectionNum = words.shift();
+		}
+		// need to check for weird 's-' edge cases on some lines
+		console.log("Checking: ", currentSection);
+		
+		// foundSectionNum = parseInt(words.splice(index, 1)[0]);
+		if (isNaN(foundSectionNum)) {
+			console.log("Not a number!");
+			foundSectionNum = words.shift();
+		}
 		console.log("Found: ", foundSectionNum);
 	} else { // handles section number being preceded by a non-space character
-		const word = words[words.length - 1];
-		console.log("Finding section number at end of ", word);
-		console.log("Number length is ", currentSection.toString().length);
-		foundSectionNum = word.substring(word.length - currentSection.toString().length);
-		console.log("Worked harder to find section", foundSectionNum);
+		foundSectionNum = words.shift();
+		if (!isNaN(foundSectionNum)) { // check if a section number was missing
+			currentSection = foundSectionNum;
+			console.log("Next Section Number:", currentSection);
+		} else { // returns null when line is an in-betweener
+			if (foundSectionNum !== currentSection) foundSectionNum = null;
+		}
 	}
 	const string = words.join(' ').trim();
-	return { foundSectionNum, line: string };
+	console.log("Found Section Num: ", foundSectionNum);
+	return { foundSectionNum, line: string, currentSection };
 }
 
 function findPeriodIndexes(array) {
@@ -129,13 +158,16 @@ function appendBodies(array, sections) {
 		if (!bodyIndexes.has(section.number)) {
 			let index;
 			index = array.findIndex((line, lineIndex) => {
-				// first look for exact match - contains number and title
-				let found = (line.includes(section.number) && line.includes(section.title)) && lineIndex > lastIndex;
-				if (found) return found;
-				// if failed, look for a match with number and decreasing number of words 5 down
-				found = findNearMatch(line, section);
-				if (found) return found;
-				return line === section.number.toString(); // last ditch effort - section Number is entire line
+				// prevent matches being found before last match
+				if (lineIndex > lastIndex) {
+					// first look for exact match - contains number and title
+					let found = (line.includes(section.number) && line.includes(section.title));
+					if (found) return found;
+					// if failed, look for a match with number and decreasing number of words 5 down
+					found = findNearMatch(line, section);
+					if (found) return found;
+					return line === section.number.toString(); // last ditch effort - section Number is entire line
+				}
 			})
 			if (index === -1) {
 				console.log(`No Exact or Near Match found for ${section.number} - ${section.title}`);
@@ -179,9 +211,11 @@ function findNearMatch(line, section) {
 
 function addSectionBodies(sections, bodyIndexes, array) {
 	sections.forEach(section => {
-		console.log(section.number);
 		const startIndex = bodyIndexes.get(section.number);
-		const endIndex = bodyIndexes.get(section.number + 1);
+		// this needs to find next number
+		const endIndex = findNextKeyInMap(bodyIndexes, section.number);
+		console.log(endIndex);
+		// const endIndex = bodyIndexes.get(section.number + 1);
 		if (endIndex) {
 			console.log(`Body for section ${section.number} goes from ${startIndex} to ${endIndex}`);
 			section.body = array.slice(startIndex, endIndex);
@@ -190,6 +224,13 @@ function addSectionBodies(sections, bodyIndexes, array) {
 			section.body = array.slice(startIndex);
 		}
 	})
+}
+
+function findNextKeyInMap(map, key) {
+	const remaining = map.size + 2; // one for zero-index, one for keys starting at 1. (I think)
+	for (let i = key + 1; i < remaining; i++) {
+		if (map.has(i)) return map.get(i); 
+	}
 }
 
 function removeEmptyLines(array) {
@@ -209,7 +250,7 @@ function determineDocMetaData(array) {
 	console.log(dataLine);
 	// find journalNum: "No. 43"
 	// find date
-	const words = dataLine.split(' ');
+	const words = dataLine.trim().split(' ');
 	const preNum = words.shift();
 	const journalNum = removeLastCharacter(words.shift());
 	const day = removeLastCharacter(words.shift());

@@ -134,56 +134,53 @@ function getLastKeyInMap(map) {
 
 function appendBodiesAdvanced(array, sections) {
 	const bodyIndexes = new Map();
-	const titleLengths = new Map();
 	sections.forEach(section => {
 		console.log(`Finding section ${section.number} - ${section.title}`);
-		// first look for exact match - contains number and title
-		let index;
-		let length;
-		index = array.findIndex(line => {
-			length = section.title.split(' ').length;
-			return line.includes(section.number) && line.includes(section.title);
-		})
-		// if failed, look for a match with number and decreasing number of words 5 down
-		if (index === -1) {
-			titleLengths.set(section.number, length);
-			console.log(`No Exact Match found for ${section.number} - ${section.title}`);
+		if (!bodyIndexes.has(section.number)) {
+			let index;
+			index = array.findIndex(line => {
+				// first look for exact match - contains number and title
+				let found = line.includes(section.number) && line.includes(section.title);
+				if (found) return found;
+				// if failed, look for a match with number and decreasing number of words 5 down
+				found = findNearMatch(line, section);
+				return found;
+			})
+			if (index === -1) {
+				console.log(`No Exact or Near Match found for ${section.number} - ${section.title}`);
+			}
+			bodyIndexes.set(section.number, index);
+			if (index) console.log(`${section.number} begins at line ${index}`);
 		}
-		bodyIndexes.set(section.number, index);
-		if (index) console.log(`${section.number} begins at line ${index}`);
 	})
 	console.log("Body Indexes: ", bodyIndexes);
-	console.log("Title Lengths: ", titleLengths);
 	addSectionBodies(sections, bodyIndexes, array);
 }
 
-function appendBodies(array, sections) {
-	console.log(`Appending bodies to sections`);
-	const bodyIndexes = new Map();
-	sections.forEach(section => {
-		console.log(`Finding section ${section.number} - ${section.title}`)
-		let index;
-		index = array.findIndex(line => {
-			if (!section.number) return;
-			const wordsLine = line.trim().split(' ');
-			const wordsTitle = section.title.split(' ');
-			const numToMatch = cleanupSectionNumber(wordsLine[wordsLine.length - 1], section.number.toString().length);
-			return wordsLine[0].trim() === wordsTitle[0].trim() && numToMatch === section.number.toString();
-		})
-		// 
-		if (index === -1) {
-			index = array.findIndex(line => {
-				const words = section.title.split(' ');
-				// this is a tolerance of 3 - should probably loop, decreasing num Words
-				// until finding a match, and display its confidence level.
-				return line.includes(words[0]) && line.includes(words[1]) && line.includes(words[2]);
+function findNearMatch(line, section) {
+	let tolerance = 5;
+	// first pass through and get all lines containing section number
+	if (line.trim().startsWith(section.number) || line.trim().endsWith(section.number)) {
+		console.log("Found line containing", section.number);
+		// try to match first five words in title (not all titles have five words)
+		let titleWords = section.title.split(' ');
+		titleWords.splice(tolerance);
+		// console.log("Looking for these words:", titleWords);
+		let lineWords = line.split(' ');
+		// console.log("in this set of words:", lineWords);
+		// reduce number of words to match until match is found
+		while (titleWords.length > 0) {
+			const wordMatches = new Set();
+			titleWords.forEach(word => {
+				wordMatches.add(lineWords.includes(word));
 			})
+			if (!wordMatches.has(false)) {
+				return true;
+			}
+			titleWords.pop();
 		}
-		bodyIndexes.set(section.number, index);
-		if (index) console.log(`${section.number} begins at line ${index}`);
-	})
-	console.log("Body Indexes: ", bodyIndexes);
-	addSectionBodies(sections, bodyIndexes, array);
+	}
+	return false;
 }
 
 function addSectionBodies(sections, bodyIndexes, array) {

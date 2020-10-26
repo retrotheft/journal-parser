@@ -1,9 +1,9 @@
 const fs = require('fs');
 const pdfParse = require('pdf-parse');
 
-console.log("Welcome to PDF Parser");
+console.log("Welcome to the Senate Journal PDF Parser");
 
-const journal = '42';
+const journal = '66';
 
 const pdfFile = fs.readFileSync(`./journals/${journal}.pdf`);
 
@@ -33,28 +33,10 @@ function parseString(text) {
 	const sections = createSections(sectionLines);
 	console.log("Sections:");
 	console.log(sections);
-	// Need to find the indexes again since some strings have been lengthened
-	// periodIndexes = findPeriodIndexes(sectionLines);
-	// periodIndexes.forEach((cursor, index) => {
-
-	// })
-	// const mappedArray = sectionLines.map(str => {
-	// 	return str.replace(/[.]/g, ""); // this might remove periods we don't want to take
-	// })
-	// console.log(mappedArray);
-	// const sectionPages = mappedArray.map((str, index) => {
-	// 	const cursorStart = periodIndexes.get(index);
-	// 	const title = str.substring(0, cursorStart).trim();
-	// 	const metadata = str.substring(cursorStart).trim();
-	// 	const array = metadata.split(' ');
-	// 	const page = array[0];
-	// 	const number = array[1] ? parseInt(array[1]) : null;
-	// 	return { title, page, number };
-	// })
 	const filteredArray = removeEmptyLines(array);
-	appendBodiesAdvanced(filteredArray, sections);
-	fs.writeFileSync(`./output/${journal}/lines.json`, JSON.stringify(filteredArray));
-	fs.writeFileSync(`./output/${journal}/sections.json`, JSON.stringify(sections));
+	appendBodies(filteredArray, sections);
+	fs.writeFileSync(`${dir}/lines.json`, JSON.stringify(filteredArray));
+	fs.writeFileSync(`${dir}/sections.json`, JSON.stringify(sections));
 }
 
 // this should receive the post-extractTOC array of lines
@@ -62,7 +44,7 @@ function createSections(lines) {
 	const array = [];
 	lines.forEach(line => {
 		const words = line.trim().split(' ');
-		const number = words.shift();
+		const number = parseInt(words.shift());
 		const page = words.pop();
 		const title = words.join(' ').trim();
 		array.push({ number, title, page });
@@ -107,14 +89,19 @@ function extractTOC(contents, periodIndexes) {
 	return array;
 }
 
-// this still needs to deal with end of line Section Nums not preceded by space
-// 28, 31, and 36 in journal 43 for example.
-
 function extractSectionNumber(line, currentSection, foundSectionNum) {
 	const words = line.split(' ');
 	const index = words.findIndex(word => word == currentSection);
-	if (index > -1) foundSectionNum = parseInt(words.splice(index, 1)[0]);
-	console.log("Found: ", foundSectionNum);
+	if (index > -1) {
+		foundSectionNum = parseInt(words.splice(index, 1)[0]);
+		console.log("Found: ", foundSectionNum);
+	} else { // handles section number being preceded by a non-space character
+		const word = words[words.length - 1];
+		console.log("Finding section number at end of ", word);
+		console.log("Number length is ", currentSection.toString().length);
+		foundSectionNum = word.substring(word.length - currentSection.toString().length);
+		console.log("Worked harder to find section", foundSectionNum);
+	}
 	const string = words.join(' ').trim();
 	return { foundSectionNum, line: string };
 }
@@ -132,24 +119,30 @@ function getLastKeyInMap(map) {
 	return Array.from(map)[map.size - 1][0]
 }
 
-function appendBodiesAdvanced(array, sections) {
+// appendBodies needs to remove body from main array when adding
+
+function appendBodies(array, sections) {
 	const bodyIndexes = new Map();
+	let lastIndex = -1;
 	sections.forEach(section => {
 		console.log(`Finding section ${section.number} - ${section.title}`);
 		if (!bodyIndexes.has(section.number)) {
 			let index;
-			index = array.findIndex(line => {
+			index = array.findIndex((line, lineIndex) => {
 				// first look for exact match - contains number and title
-				let found = line.includes(section.number) && line.includes(section.title);
+				let found = (line.includes(section.number) && line.includes(section.title)) && lineIndex > lastIndex;
 				if (found) return found;
 				// if failed, look for a match with number and decreasing number of words 5 down
 				found = findNearMatch(line, section);
-				return found;
+				if (found) return found;
+				return line === section.number.toString(); // last ditch effort - section Number is entire line
 			})
 			if (index === -1) {
 				console.log(`No Exact or Near Match found for ${section.number} - ${section.title}`);
 			}
+			// ensure no match is found before previous section
 			bodyIndexes.set(section.number, index);
+			lastIndex = index;
 			if (index) console.log(`${section.number} begins at line ${index}`);
 		}
 	})
@@ -162,6 +155,7 @@ function findNearMatch(line, section) {
 	// first pass through and get all lines containing section number
 	if (line.trim().startsWith(section.number) || line.trim().endsWith(section.number)) {
 		console.log("Found line containing", section.number);
+		console.log(line);
 		// try to match first five words in title (not all titles have five words)
 		let titleWords = section.title.split(' ');
 		titleWords.splice(tolerance);
@@ -185,6 +179,7 @@ function findNearMatch(line, section) {
 
 function addSectionBodies(sections, bodyIndexes, array) {
 	sections.forEach(section => {
+		console.log(section.number);
 		const startIndex = bodyIndexes.get(section.number);
 		const endIndex = bodyIndexes.get(section.number + 1);
 		if (endIndex) {
@@ -195,11 +190,6 @@ function addSectionBodies(sections, bodyIndexes, array) {
 			section.body = array.slice(startIndex);
 		}
 	})
-}
-
-// This function is for when a non-space character precedes a section number
-function cleanupSectionNumber(word, sectionNumLength) {
-	return word.substring(word.length - sectionNumLength);
 }
 
 function removeEmptyLines(array) {
@@ -225,7 +215,7 @@ function determineDocMetaData(array) {
 	const day = removeLastCharacter(words.shift());
 	const date = words.shift();
 	const month = words.shift();
-	const year = words.shift();
+	const year = words.pop(); // pops due to some metadata lines containing two dates
 	const metadata = { preNum, journalNum, day, date, month, year };
 	console.log(metadata);
 	return metadata;

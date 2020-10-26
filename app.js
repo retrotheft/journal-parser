@@ -3,13 +3,13 @@ const pdfParse = require('pdf-parse');
 
 console.log("Welcome to PDF Parser");
 
-const journal = '43';
+const journal = '42';
 
 const pdfFile = fs.readFileSync(`./journals/${journal}.pdf`);
 
 const dir = `./output/${journal}`;
 
-if (!fs.existsSync(dir)){
+if (!fs.existsSync(dir)) {
 	fs.mkdirSync(dir);
 }
 
@@ -30,80 +30,93 @@ function parseString(text) {
 	const contents = array.splice(0, getLastKeyInMap(periodIndexes) + 1);
 	fs.writeFileSync(`${dir}/contents.md`, contents);
 	const sectionLines = extractTOC(contents, periodIndexes);
-	
-	
+	const sections = createSections(sectionLines);
+	console.log("Sections:");
+	console.log(sections);
 	// Need to find the indexes again since some strings have been lengthened
-	periodIndexes = findPeriodIndexes(sectionLines);
+	// periodIndexes = findPeriodIndexes(sectionLines);
 	// periodIndexes.forEach((cursor, index) => {
 
 	// })
-	const mappedArray = sectionLines.map(str => {
-		return str.replace(/[.]/g, ""); // this might remove periods we don't want to take
-	})
-	console.log(mappedArray);
-	const sectionPages = mappedArray.map((str, index) => {
-		const cursorStart = periodIndexes.get(index);
-		const title = str.substring(0, cursorStart).trim();
-		const metadata = str.substring(cursorStart).trim();
-		const array = metadata.split(' ');
-		const page = array[0];
-		const number = array[1] ? parseInt(array[1]) : null;
-		return { title, page, number };
-	})
+	// const mappedArray = sectionLines.map(str => {
+	// 	return str.replace(/[.]/g, ""); // this might remove periods we don't want to take
+	// })
+	// console.log(mappedArray);
+	// const sectionPages = mappedArray.map((str, index) => {
+	// 	const cursorStart = periodIndexes.get(index);
+	// 	const title = str.substring(0, cursorStart).trim();
+	// 	const metadata = str.substring(cursorStart).trim();
+	// 	const array = metadata.split(' ');
+	// 	const page = array[0];
+	// 	const number = array[1] ? parseInt(array[1]) : null;
+	// 	return { title, page, number };
+	// })
 	const filteredArray = removeEmptyLines(array);
-	appendBodies(filteredArray, sectionPages);
+	appendBodiesAdvanced(filteredArray, sections);
 	fs.writeFileSync(`./output/${journal}/lines.json`, JSON.stringify(filteredArray));
-	fs.writeFileSync(`./output/${journal}/sections.json`, JSON.stringify(sectionPages));
+	fs.writeFileSync(`./output/${journal}/sections.json`, JSON.stringify(sections));
+}
+
+// this should receive the post-extractTOC array of lines
+function createSections(lines) {
+	const array = [];
+	lines.forEach(line => {
+		const words = line.trim().split(' ');
+		const number = words.shift();
+		const page = words.pop();
+		const title = words.join(' ').trim();
+		array.push({ number, title, page });
+	})
+	return array;
 }
 
 function extractTOC(contents, periodIndexes) {
-	const sectionLines = [];
+	const array = [];
 	const buffer = [];
 	let currentSection = 1;
-	let sectionNum = null;
+	let foundSectionNum = null;
 	contents.forEach((line, index) => {
+		// code for extracting section Number should be here
+		if (!foundSectionNum) {
+			({ foundSectionNum, line } = extractSectionNumber(line, currentSection, foundSectionNum));
+		}
+		// condense each TOC item onto a single line
 		if (periodIndexes.has(index)) {
-			console.log(`Parsing section ${currentSection} - ${line}`);
 			let string = '';
-			// if line has 4 dots
+			line = line.replace(/[.]/g, "");
+			// if buffer holds any strings, add them to the beginning of the line.
+			// however, the first line should have the Section Number.
+			// This should be at the start of the first line, but sometimes at the end. :(
 			while (buffer.length > 0) {
-				string += buffer.shift()
+				string += buffer.shift();
 			}
-			console.log("Buffer emptied. String:");
-			console.log(string);
-			string += line;
-			// work out if section Number is at start or end of line
-			if (line.startsWith(currentSection)) {
-				sectionNum = line.slice(0, currentSection.toString().length);
+			string += line; // once buffer is empty, add the period line to the end.
+			if (foundSectionNum) {
+				string = foundSectionNum + ' ' + string; // add SectionNum to start of string
+				foundSectionNum = null;
 			}
-			if (sectionNum) {
-				console.log(`Appending section number ${sectionNum} to line`);
-				string += sectionNum;
-				console.log(string);
-				sectionNum = null;
-			}
-			sectionLines.push(string);
+			array.push(string);
 			buffer.length = 0;
-			currentSection++;
+			currentSection++
 		} else {
-			if (currentSection > 0) {
-				console.log(`Performing cleanup on section ${currentSection}`);
-				const numLength = currentSection.toString().length;
-				console.log(`Section number is ${numLength} digits long`);
-				// extract section number from first line
-				if (buffer.length === 0) {
-					const sliceIndex = line.length - numLength;
-					console.log(`Slicing ${numLength} digits from ${sliceIndex}`);
-					sectionNum = line.substring(sliceIndex);
-					line = line.substring(0, sliceIndex);
-					console.log(`Section Number is ${sectionNum}`);
-				}
-				buffer.push(line);
-				// console.log(buffer);
-			}
+			buffer.push(line);
 		}
 	})
-	return sectionLines;
+	console.log("Returning TOC:");
+	console.log(array);
+	return array;
+}
+
+// this still needs to deal with end of line Section Nums not preceded by space
+// 28, 31, and 36 in journal 43 for example.
+
+function extractSectionNumber(line, currentSection, foundSectionNum) {
+	const words = line.split(' ');
+	const index = words.findIndex(word => word == currentSection);
+	if (index > -1) foundSectionNum = parseInt(words.splice(index, 1)[0]);
+	console.log("Found: ", foundSectionNum);
+	const string = words.join(' ').trim();
+	return { foundSectionNum, line: string };
 }
 
 function findPeriodIndexes(array) {
@@ -117,6 +130,31 @@ function findPeriodIndexes(array) {
 
 function getLastKeyInMap(map) {
 	return Array.from(map)[map.size - 1][0]
+}
+
+function appendBodiesAdvanced(array, sections) {
+	const bodyIndexes = new Map();
+	const titleLengths = new Map();
+	sections.forEach(section => {
+		console.log(`Finding section ${section.number} - ${section.title}`);
+		// first look for exact match - contains number and title
+		let index;
+		let length;
+		index = array.findIndex(line => {
+			length = section.title.split(' ').length;
+			return line.includes(section.number) && line.includes(section.title);
+		})
+		// if failed, look for a match with number and decreasing number of words 5 down
+		if (index === -1) {
+			titleLengths.set(section.number, length);
+			console.log(`No Exact Match found for ${section.number} - ${section.title}`);
+		}
+		bodyIndexes.set(section.number, index);
+		if (index) console.log(`${section.number} begins at line ${index}`);
+	})
+	console.log("Body Indexes: ", bodyIndexes);
+	console.log("Title Lengths: ", titleLengths);
+	addSectionBodies(sections, bodyIndexes, array);
 }
 
 function appendBodies(array, sections) {
@@ -144,7 +182,7 @@ function appendBodies(array, sections) {
 		bodyIndexes.set(section.number, index);
 		if (index) console.log(`${section.number} begins at line ${index}`);
 	})
-	console.log(bodyIndexes);
+	console.log("Body Indexes: ", bodyIndexes);
 	addSectionBodies(sections, bodyIndexes, array);
 }
 

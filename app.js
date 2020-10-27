@@ -3,7 +3,7 @@ const pdfParse = require('pdf-parse');
 
 console.log("Welcome to the Senate Journal PDF Parser");
 
-const journal = '54';
+const journal = '43';
 
 const pdfFile = fs.readFileSync(`./journals/${journal}.pdf`);
 

@@ -1,0 +1,26 @@
+{
+  "name": "pdf-parser",
+  "version": "1.0.0",
+  "description": "This software is designed to take the official **Journals of the Senate** from the [Australian Parliament Website](https://www.aph.gov.au/Parliamentary_Business/Chamber_documents/Senate_chamber_documents/Journals_of_the_Senate) and convert them into a series of objects representing each section of the document, for further use.",
+  "main": "app.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "dependencies": {
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/retrotheft/journal-parser.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/retrotheft/journal-parser/issues"
+  },
+  "homepage": "https://github.com/retrotheft/journal-parser#readme"
+}
